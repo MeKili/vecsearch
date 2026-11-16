@@ -6,7 +6,7 @@ import numpy as np
 
 from vecsearch.core import FloatArray, IntArray, Metric, squared_distances
 from vecsearch.index.base import Index
-from vecsearch.index.kmeans import kmeans
+from vecsearch.index.kmeans import _assign, kmeans
 
 
 class IVFIndex(Index):
@@ -31,6 +31,15 @@ class IVFIndex(Index):
         self._cells = [
             np.flatnonzero(assignments == c).astype(np.int64) for c in range(len(self._centroids))
         ]
+
+    def _add(self, start: int, matrix: FloatArray) -> None:
+        # centroids are not recomputed: new rows join the cell of the nearest existing centroid
+        assignments = _assign(matrix, self._centroids)
+        new_rows = start + np.arange(matrix.shape[0], dtype=np.int64)
+        for c in range(len(self._centroids)):
+            joining = new_rows[assignments == c]
+            if joining.size:
+                self._cells[c] = np.concatenate([self._cells[c], joining])
 
     def _candidates(self, query: FloatArray) -> IntArray:
         nearest = np.argsort(squared_distances(query, self._centroids))[: self.nprobe]

@@ -82,6 +82,26 @@ def test_api_full_flow() -> None:
     assert client.post("/indexes/demo/search", json={"vector": vectors[7]}).status_code == 404
 
 
+def test_api_add_vectors() -> None:
+    client.put(
+        "/indexes/grow",
+        json={"ids": ["a", "b"], "vectors": [[0.0, 0.0], [1.0, 1.0]]},
+    )
+    added = client.post("/indexes/grow/vectors", json={"ids": ["c"], "vectors": [[2.0, 2.0]]})
+    assert added.status_code == 200
+    assert added.json()["size"] == 3
+    result = client.post("/indexes/grow/search", json={"vector": [2.1, 2.1], "k": 1})
+    assert result.json()["hits"][0]["id"] == "c"
+
+    duplicate = client.post("/indexes/grow/vectors", json={"ids": ["a"], "vectors": [[3.0, 3.0]]})
+    assert duplicate.status_code == 422
+    assert (
+        client.post("/indexes/missing/vectors", json={"ids": ["z"], "vectors": [[0.0]]}).status_code
+        == 404
+    )
+    client.delete("/indexes/grow")
+
+
 def test_api_validation_errors() -> None:
     bad_algo = client.put(
         "/indexes/x", json={"algorithm": "nope", "ids": ["a"], "vectors": [[1.0]]}

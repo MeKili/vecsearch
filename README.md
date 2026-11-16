@@ -79,7 +79,16 @@ index.build([f"doc-{i}" for i in range(len(vectors))], vectors)
 
 for hit in index.search(vectors[42], k=5):
     print(hit.id, round(hit.distance, 4))
+
+more_vectors = rng.normal(size=(1_000, 64))
+index.add([f"doc-{i}" for i in range(10_000, 11_000)], more_vectors)
 ```
+
+`add` inserts new vectors under new ids without rebuilding the index from scratch. For `ivf`,
+new vectors join the cell of the nearest *existing* centroid; for `lsh`, they are hashed into the
+existing tables. Centroids and hyperplanes are never recomputed, so the cost of `add` is
+proportional to the number of new vectors, not to the size of the index. Calling `add` on an empty
+index behaves exactly like `build`.
 
 HTTP service:
 
@@ -87,6 +96,8 @@ HTTP service:
 uv run uvicorn vecsearch.api:app --reload
 curl -X PUT localhost:8000/indexes/demo -H 'content-type: application/json' \
   -d '{"algorithm": "flat", "ids": ["a", "b"], "vectors": [[0, 0], [1, 1]]}'
+curl -X POST localhost:8000/indexes/demo/vectors -H 'content-type: application/json' \
+  -d '{"ids": ["c"], "vectors": [[2, 2]]}'
 curl -X POST localhost:8000/indexes/demo/search -H 'content-type: application/json' \
   -d '{"vector": [0.9, 0.9], "k": 1}'
 ```
@@ -102,9 +113,14 @@ curl -X POST localhost:8000/indexes/demo/search -H 'content-type: application/js
 - **Clustered benchmark data on purpose.** On uniform random vectors in high dimensions every point
   is about equally far from every other, and neither IVF nor LSH can help. Real embeddings are
   clustered, so the generator makes Gaussian blobs.
-- **Limitations.** The indexes are static: you rebuild to add data. Everything lives in memory,
-  distances use full precision, and there is no graph index such as HNSW or any quantisation. Those
-  are the obvious next steps, and the candidate-generator design is meant to make adding them easy.
+- **Growing an index without rebuilding it.** `add` appends new vectors and routes them through the
+  existing candidate structures instead of rebuilding them. This trades a little index quality for
+  speed: an IVF cell can grow unevenly if new data drifts away from the original centroids, and an
+  LSH table keeps hashing with its original random hyperplanes. Call `build` again to re-cluster
+  or re-hash from scratch, for example once an index has grown much larger than when it was built.
+- **Limitations.** Everything lives in memory, distances use full precision, and there is no graph
+  index such as HNSW or any quantisation. Those are the obvious next steps, and the
+  candidate-generator design is meant to make adding them easy.
 
 ## Tests
 

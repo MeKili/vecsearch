@@ -54,9 +54,36 @@ class Index(ABC):
         self.queries = 0
         self.candidates_scored = 0
 
+    def add(self, ids: Sequence[str], vectors: FloatArray) -> None:
+        """Add new vectors under new ids, updating the index in place.
+
+        Unlike ``build``, this keeps existing auxiliary structures: an IVF index keeps its
+        centroids, an LSH index keeps its hyperplanes. Only the new rows are routed into them.
+        """
+        if len(self) == 0:
+            self.build(ids, vectors)
+            return
+        if len(set(ids)) != len(ids):
+            raise ValueError("ids must be unique")
+        if not set(ids).isdisjoint(self._ids):
+            raise ValueError("ids must not duplicate ids already in the index")
+        matrix = prepare(vectors, self.metric)
+        if len(ids) != matrix.shape[0]:
+            raise ValueError("number of ids must equal number of vectors")
+        if matrix.shape[1] != self.dim:
+            raise ValueError(f"vectors have dimension {matrix.shape[1]}, index has {self.dim}")
+        start = len(self._ids)
+        self._ids.extend(ids)
+        self._data = np.vstack([self._data, matrix])
+        self._add(start, matrix)
+
     @abstractmethod
     def _build(self) -> None:
         """Build auxiliary structures over ``self._data``."""
+
+    @abstractmethod
+    def _add(self, start: int, matrix: FloatArray) -> None:
+        """Route the new, already-prepared rows at ``self._data[start:]`` into the structures."""
 
     @abstractmethod
     def _candidates(self, query: FloatArray) -> IntArray:

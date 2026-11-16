@@ -14,5 +14,8 @@ class FlatIndex(Index):
     def _build(self) -> None:
         self._all: IntArray = np.arange(len(self), dtype=np.int64)
 
+    def _add(self, start: int, matrix: FloatArray) -> None:
+        self._all = np.arange(len(self), dtype=np.int64)
+
     def _candidates(self, query: FloatArray) -> IntArray:
         return self._all

@@ -42,6 +42,17 @@ class LSHIndex(Index):
                 buckets.setdefault(code, []).append(row)
             self._tables.append({c: np.asarray(r, dtype=np.int64) for c, r in buckets.items()})
 
+    def _add(self, start: int, matrix: FloatArray) -> None:
+        new_rows = start + np.arange(matrix.shape[0], dtype=np.int64)
+        for t in range(self.n_tables):
+            codes = self._codes(matrix, t)
+            for code in np.unique(codes):
+                rows = new_rows[codes == code]
+                bucket = self._tables[t].get(int(code))
+                self._tables[t][int(code)] = (
+                    rows if bucket is None else np.concatenate([bucket, rows])
+                )
+
     def _candidates(self, query: FloatArray) -> IntArray:
         found: list[IntArray] = []
         for t in range(self.n_tables):

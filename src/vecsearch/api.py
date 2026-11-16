@@ -27,6 +27,11 @@ class CreateRequest(BaseModel):
     vectors: list[list[float]] = Field(min_length=1)
 
 
+class AddRequest(BaseModel):
+    ids: list[str] = Field(min_length=1)
+    vectors: list[list[float]] = Field(min_length=1)
+
+
 class SearchRequest(BaseModel):
     vector: list[float] = Field(min_length=1)
     k: int = Field(default=10, ge=1, le=1000)
@@ -94,6 +99,18 @@ def create(name: str, req: CreateRequest) -> IndexInfo:
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     _indexes[name] = index
+    return _info(name, index)
+
+
+@app.post("/indexes/{name}/vectors", response_model=IndexInfo)
+def add_vectors(name: str, req: AddRequest) -> IndexInfo:
+    index = _get(name)
+    if len(index) + len(req.ids) > MAX_VECTORS:
+        raise HTTPException(status_code=413, detail=f"at most {MAX_VECTORS} vectors are accepted")
+    try:
+        index.add(req.ids, np.asarray(req.vectors, dtype=np.float64))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _info(name, index)
 
 

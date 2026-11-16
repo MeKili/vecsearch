@@ -10,8 +10,8 @@ from vecsearch.index.lsh import LSHIndex
 from vecsearch.index.registry import create_index
 
 
-def _ids(n: int) -> list[str]:
-    return [str(i) for i in range(n)]
+def _ids(n: int, start: int = 0) -> list[str]:
+    return [str(i) for i in range(start, start + n)]
 
 
 def _truth(
@@ -134,6 +134,70 @@ def test_build_and_search_validation() -> None:
         index.search(np.ones(2))
     with pytest.raises(ValueError):
         index.search(np.ones(3), k=0)
+
+
+def test_add_to_empty_index_behaves_like_build() -> None:
+    index = FlatIndex()
+    index.add(["a", "b"], np.array([[0.0, 0.0], [1.0, 1.0]]))
+    assert len(index) == 2
+    assert [h.id for h in index.search(np.array([0.1, 0.1]), 1)] == ["a"]
+
+
+def test_add_rejects_duplicate_or_mismatched_ids() -> None:
+    index = FlatIndex()
+    index.build(["a", "b"], np.array([[0.0, 0.0], [1.0, 1.0]]))
+    with pytest.raises(ValueError, match="unique"):
+        index.add(["c", "c"], np.array([[2.0, 2.0], [3.0, 3.0]]))
+    with pytest.raises(ValueError, match="duplicate"):
+        index.add(["a"], np.array([[2.0, 2.0]]))
+    with pytest.raises(ValueError, match="number of ids"):
+        index.add(["c"], np.array([[2.0, 2.0], [3.0, 3.0]]))
+    with pytest.raises(ValueError, match="dimension"):
+        index.add(["c"], np.array([[2.0, 2.0, 2.0]]))
+
+
+def test_flat_add_matches_a_full_rebuild() -> None:
+    rng = np.random.default_rng(9)
+    data = rng.normal(size=(200, 8))
+    q = rng.normal(size=8)
+    grown = FlatIndex()
+    grown.build(_ids(150), data[:150])
+    grown.add(_ids(50, start=150), data[150:])
+    rebuilt = FlatIndex()
+    rebuilt.build(_ids(200), data)
+    assert [h.id for h in grown.search(q, 5)] == [h.id for h in rebuilt.search(q, 5)]
+
+
+def test_ivf_add_keeps_centroids_and_finds_new_points() -> None:
+    data = make_clusters(500, 16, seed=10)
+    more = make_clusters(100, 16, seed=11)
+    index = IVFIndex(nlist=8, nprobe=8)
+    index.build(_ids(500), data)
+    centroids_before = index._centroids.copy()
+    index.add(_ids(100, start=500), more)
+    assert np.array_equal(index._centroids, centroids_before)
+    assert len(index) == 600
+    assert sum(cell.size for cell in index._cells) == 600
+    hits = [h.id for h in index.search(more[7], 1)]
+    assert hits == ["507"]
+
+
+def test_lsh_add_finds_new_near_duplicate() -> None:
+    rng = np.random.default_rng(12)
+    data = rng.normal(size=(1000, 16))
+    index = LSHIndex(Metric.COSINE, n_tables=8, n_bits=8)
+    index.build(_ids(1000), data)
+    new_point = rng.normal(size=(1, 16))
+    index.add(["new"], new_point)
+    query = new_point[0] + rng.normal(scale=0.001, size=16)
+    hits = [h.id for h in index.search(query, 1)]
+    assert hits == ["new"]
+
+
+def test_add_to_index_without_a_previous_build_rejects_bad_input_like_build() -> None:
+    index = IVFIndex(nlist=2)
+    with pytest.raises(ValueError, match="unique"):
+        index.add(["a", "a"], np.zeros((2, 2)) + 1)
 
 
 def test_registry_rejects_unknown_algorithm_and_params() -> None:
